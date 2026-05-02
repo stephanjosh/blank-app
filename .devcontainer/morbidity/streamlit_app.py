@@ -48,7 +48,7 @@ st.markdown("""
             flex-direction: column;
             justify-content: left;
             align-items: center;
-            border: 0.1px solid #eee;
+            # border: 0.1px solid #eee;
             border-radius: 20px;
             padding: 15px;
             
@@ -70,6 +70,12 @@ st.markdown("""
         [data-testid="stMetricDelta"] {
             text-align: center;
             justify-content: center;
+        }
+            
+        div[data-testid="column"]:first-child div[data-testid="stMetric"] {
+            border: 0.5px solid #eee;
+            border-radius: 8px;
+            padding: 10px;
         }
 </style>
 """, unsafe_allow_html=True)
@@ -232,7 +238,7 @@ top_5 = diagnosis_totals_vol.sort_values('total_cases', ascending=False).head(5)
 # Display
 col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
 with col1:
-    st.metric("Total People", f"{total:,}", delta=tot_source)
+    st.metric("Total People", f"{total:,}", delta=tot_source, delta_color='red')
 
 with col2:
     st.metric("Males", f"{male:,}", delta=male_source)
