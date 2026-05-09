@@ -270,7 +270,7 @@ with col4:
 
     text = bars.mark_text(
         align='left',
-        baseline='middle',
+        baseline='middle',        git add .devcontainer/morbidity/streamlit_app.py && git commit -m "Move diagnosis chart labels outside bars" && git push origin main
         color='white',
         dx=5
     ).encode(text=alt.Text('total_cases:Q', format=','))
