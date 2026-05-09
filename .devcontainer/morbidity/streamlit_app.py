@@ -11,8 +11,6 @@ from model.morbid_model import MentalHealthDataExtractor, main
 import plotly.express as px
 import hashlib
 
-
-# Load data
 try:
     data = pd.read_csv('model/extracted_mental_health_data.csv')
     # st.success("✅ Data loaded successfully!") 
@@ -43,13 +41,13 @@ alt.themes.enable("default")
 st.markdown("""
 <style>
     [data-testid="stMetric"] {
-            text-align: center;
+            text-align: right;
             display: flex;
             flex-direction: column;
             justify-content: left;
-            align-items: center;
+            align-items: center;    
             # border: 0.1px solid #eee;
-            border-radius: 20px;
+            # border-radius: 20px;
             padding: 15px;
             
         }
@@ -62,13 +60,13 @@ st.markdown("""
         
         /* Center the value */
         [data-testid="stMetricValue"] {
-            text-align: center;
+            text-align: right;
             justify-content: center;
         }
         
         /* Center the delta */
         [data-testid="stMetricDelta"] {
-            text-align: center;
+            text-align: right;
             justify-content: center;
         }
             
@@ -77,6 +75,7 @@ st.markdown("""
             border-radius: 8px;
             padding: 10px;
         }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -232,8 +231,23 @@ diagnosis_totals = filtered_data.groupby('diagnosis')['total_cases'].sum().sort_
 diagnosis_totals_vol = diagnosis_totals.head(10).reset_index()
 diagnosis_totals_vol.columns = ['diagnosis', 'total_cases']
 
+
 # just for display
 top_5 = diagnosis_totals_vol.sort_values('total_cases', ascending=False).head(5)
+
+
+# Get age groups by burden
+age_groups = [col for col in filtered_data.columns if '_' in col and col not in ['total_male', 'total_female', 'total_cases']]
+
+age_burden = {}
+for age in age_groups:
+    age_burden[age] = filtered_data[age].sum()
+
+# Sort and get top 5
+sorted_age_burden = dict(sorted(age_burden.items(), key=lambda item: item[1], reverse=True))
+top_5_age_burden = dict(list(sorted_age_burden.items())[:5])
+max_burden_age = list(sorted_age_burden.keys())[0] if sorted_age_burden else None
+top_5_filtered_data = filtered_data[filtered_data['diagnosis'].isin(top_5['diagnosis'])]
 
 # Display
 col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
@@ -247,8 +261,7 @@ with col3:
     st.metric("Females", f"{female:,}", delta=female_source)
 
 with col4:
-    chart = alt.Chart(top_5).mark_bar().encode()
-    # Create chart
+    # Use aggregated totals for the top 5 diagnoses to avoid overlapping bars/text
     bars = alt.Chart(top_5).mark_bar().encode(
         x=alt.X('total_cases:Q', title='Total Cases'),
         y=alt.Y('diagnosis:N', sort='-x', title='Diagnosis'),
@@ -258,12 +271,159 @@ with col4:
     text = bars.mark_text(
         align='left',
         baseline='middle',
-        color='aliceblue',
+        color='white',
         dx=5
-    ).encode(text='total_cases:Q')
+    ).encode(text=alt.Text('total_cases:Q', format=','))
 
     chart = (bars + text).properties(title='Top 5 Diagnoses by Volume')
     st.altair_chart(chart, use_container_width=True)
+
+with st.container():
+    # Create 3 columns for the age groups to sit below col1, col2, col3
+    age_col1, age_col2, age_col3 = st.columns([1, 1, 1])
+    
+    # Distribute top 3 age groups across the 3 columns
+    age_items = list(top_5_age_burden.items())
+
+# BURDENS CARD STYLING
+st.markdown("""
+    <style>
+    .age-card {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+        border-left: 4px solid #ddd;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+    
+    .age-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .age-card.peak {
+        border-left: 4px solid #FF4444;
+        background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+    }
+    
+    .age-card.second {
+        border-left: 4px solid #FF9800;
+        background: linear-gradient(135deg, #fff8f0 0%, #ffffff 100%);
+    }
+    
+    .age-card.third {
+        border-left: 4px solid #4CAF50;
+        background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
+    }
+    
+    .rank-badge {
+        display: inline-block;
+        background: #f0f0f0;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+    
+    .rank-badge.peak { background: #FF4444; color: white; }
+    .rank-badge.second { background: #FF9800; color: white; }
+    .rank-badge.third { background: #4CAF50; color: white; }
+    
+    .age-group-name {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #2196F3;
+        margin: 4px 0;
+    }
+    
+    .case-count {
+        font-size: 1.3rem;
+        font-weight: bold;
+        color: #2c3e50;
+        margin: 4px 0;
+    }
+    
+    .percentage {
+        color: #7f8c8d;
+        font-size: 0.85rem;
+    }
+    
+    .progress-bar {
+        height: 6px;
+        background: #ecf0f1;
+        border-radius: 3px;
+        margin-top: 8px;
+        overflow: hidden;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
+    
+    .progress-fill.peak { background: linear-gradient(90deg, #FF4444, #FF6B6B); }
+    .progress-fill.second { background: linear-gradient(90deg, #FF9800, #FFB74D); }
+    .progress-fill.third { background: linear-gradient(90deg, #4CAF50, #81C784); }
+    </style>
+""", unsafe_allow_html=True)
+
+
+age_col1, age_col2, age_col3 = st.columns(3)
+
+with age_col1:
+    if len(age_items) > 0:
+        percent = (age_items[0][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
+        st.markdown(f"""
+        <div class='age-card peak'>
+            <div class='rank-badge peak'>🔺 PEAK BURDEN</div>
+            <div class='age-group-name'>📊 {age_items[0][0]} years</div>
+            <div class='case-count'>{age_items[0][1]:,}</div>
+            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
+            <div class='progress-bar'>
+                <div class='progress-fill peak' style='width: {percent}%;'></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No data available")
+
+with age_col2:
+    if len(age_items) > 1:
+        percent = (age_items[1][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
+        st.markdown(f"""
+        <div class='age-card second'>
+            <div class='rank-badge second'>🥈 SECOND</div>
+            <div class='age-group-name'>📊 {age_items[1][0]} years</div>
+            <div class='case-count'>{age_items[1][1]:,}</div>
+            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
+            <div class='progress-bar'>
+                <div class='progress-fill second' style='width: {percent}%;'></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No data available")
+
+with age_col3:
+    if len(age_items) > 2:
+        percent = (age_items[2][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
+        st.markdown(f"""
+        <div class='age-card third'>
+            <div class='rank-badge third'>🥉 THIRD</div>
+            <div class='age-group-name'>📊 {age_items[2][0]} years</div>
+            <div class='case-count'>{age_items[2][1]:,}</div>
+            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
+            <div class='progress-bar'>
+                <div class='progress-fill third' style='width: {percent}%;'></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No data available")
 st.divider()
 
 col1, col2 = st.columns([1, 1])
@@ -386,6 +546,7 @@ fig.update_traces(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
 st.divider()
 
 filtered_data = data.copy()
