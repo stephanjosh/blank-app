@@ -4,7 +4,6 @@ import altair as alt
 import matplotlib.pyplot as plt
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-from streamlit_option_menu import option_menu
 import numpy as np
 import streamlit.components.v1 as components
 from model.morbid_model import MentalHealthDataExtractor, main
@@ -81,37 +80,17 @@ st.markdown("""
 
 #Logo imports
 
-# Sidebar
-with st.sidebar:
-    st.title('MORBIDITY DASHBOARD')
-    selected = option_menu(
-    "Menu",
-    ["DASHBOARD", "TRENDS", "ANALYSIS", "REPORTS", "FILTERS"],  
-    icons=["tachometer", "bar-chart", "search","file-text", "filter"], 
-    default_index=0,
-        styles={
-            "container": {"padding": "0!important", "background-color": "#000000"},
-            "icon": {"color": "black", "font-size": "18px"},
-            "nav-link": {
-                "font-size": "14px",          
-                "text-align": "left",
-                "margin": "0px",
-                "--hover-color": "#09F10100"
-            },
-            "nav-link-selected": {
-                "background-color": "#09F10100", 
-                "font-size": "14px"
-            },
-        }
-)
+# Page title
+st.header("📊 Morbidity Dashboard")
+
 data = pd.read_csv('model/extracted_mental_health_data.csv')
 # print("Data", data)
 
 # ===== SIDEBAR CONTROLS =====
 with st.sidebar:
     
-    # ========== DROPDOWN FILTERS ==========
-    st.markdown("#### 🎯 Filter Options")
+    # DROPDOWN FILTERS 
+    st.markdown("🎯 Filter Options")
 
     # Extract age groups from column names in the csv files
     age_columns = [col for col in data.columns if '_' in col and col not in ['total_male', 'total_female', 'total_cases']]
@@ -173,257 +152,145 @@ with st.sidebar:
 # ============================================
 
 # Start with full dataset
+data['diagnosis'] = data['diagnosis'].astype(str).str.strip()
+data['month']     = data['month'].astype(str).str.strip()
+
+# 2. Then filter ONCE
 filtered_data = data.copy()
 if selected_age != "All":
     age_cols = [col for col in filtered_data.columns if col.startswith(f"{selected_age}_") or col.endswith(f"_{selected_age}")]
     if age_cols:
-        # Sum across age-specific columns
         filtered_data['filtered_total'] = filtered_data[age_cols].sum(axis=1)
         filtered_data = filtered_data[filtered_data['filtered_total'] > 0]
-
-# Apply diagnosis filter
 if selected_diagnosis != "All":
     filtered_data = filtered_data[filtered_data['diagnosis'] == selected_diagnosis]
-
-# Apply month filter
 if selected_month != "All":
     filtered_data = filtered_data[filtered_data['month'] == selected_month]
 
-# Create a hash of the data to detect changes
+# 3. Session state / delta logic
 data_hash = hashlib.sha256(pd.util.hash_pandas_object(data, index=True).values.tobytes()).hexdigest()
-
-# session state to, update previous values
 if 'last_data_hash' not in st.session_state:
     st.session_state.last_data_hash = data_hash
     st.session_state.previous_total = None
 
-# Calculate current values
-total = int(data['total_cases'].sum())
-male = int(data['total_male'].sum())
-female = int(data['total_female'].sum())
+total  = int(filtered_data['total_cases'].sum())
+male   = int(filtered_data['total_male'].sum())
+female = int(filtered_data['total_female'].sum())
 
-# If data changed, calculate delta vs previous
 if st.session_state.previous_total is not None and data_hash != st.session_state.last_data_hash:
-    tot_source = total - st.session_state.previous_total
-    male_source = male - st.session_state.previous_male
+    tot_source    = total  - st.session_state.previous_total
+    male_source   = male   - st.session_state.previous_male
     female_source = female - st.session_state.previous_female
 else:
-    tot_source = None
-    male_source = None
-    female_source = None
+    tot_source = male_source = female_source = None
 
-# Store current as previous for next time
-st.session_state.previous_total = total
-st.session_state.previous_male = male
+st.session_state.previous_total  = total
+st.session_state.previous_male   = male
 st.session_state.previous_female = female
-st.session_state.last_data_hash = data_hash
+st.session_state.last_data_hash  = data_hash
 
-filtered_data = data.copy()
-
-# Clean the data essential to ---  ensure accurate, reliable analysis 
-data['diagnosis'] = data['diagnosis'].astype(str).str.strip()
-data['month'] = data['month'].astype(str).str.strip()
-
-diagnosis_totals = filtered_data.groupby('diagnosis')['total_cases'].sum().sort_values(ascending=False)
-
-# For use in arrangement by volume
-# Convert Series to DataFrame
+# 4. Aggregations (on filtered_data, not data)
+diagnosis_totals     = filtered_data.groupby('diagnosis')['total_cases'].sum().sort_values(ascending=False)
 diagnosis_totals_vol = diagnosis_totals.head(10).reset_index()
 diagnosis_totals_vol.columns = ['diagnosis', 'total_cases']
+top_5 = diagnosis_totals_vol.head(5)
 
+age_groups  = [col for col in filtered_data.columns if '_' in col and col not in ['total_male', 'total_female', 'total_cases']]
+age_burden  = {age: filtered_data[age].sum() for age in age_groups}
+sorted_age_burden = dict(sorted(age_burden.items(), key=lambda x: x[1], reverse=True))
+top_5_age_burden  = dict(list(sorted_age_burden.items())[:5])
+max_burden_age    = list(sorted_age_burden.keys())[0] if sorted_age_burden else None
 
-# just for display
-top_5 = diagnosis_totals_vol.sort_values('total_cases', ascending=False).head(5)
-
-
-# Get age groups by burden
-age_groups = [col for col in filtered_data.columns if '_' in col and col not in ['total_male', 'total_female', 'total_cases']]
-
-age_burden = {}
-for age in age_groups:
-    age_burden[age] = filtered_data[age].sum()
-
-# Sort and get top 5
-sorted_age_burden = dict(sorted(age_burden.items(), key=lambda item: item[1], reverse=True))
-top_5_age_burden = dict(list(sorted_age_burden.items())[:5])
-max_burden_age = list(sorted_age_burden.keys())[0] if sorted_age_burden else None
-top_5_filtered_data = filtered_data[filtered_data['diagnosis'].isin(top_5['diagnosis'])]
-
-# Display
-col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
-with col1:
-    st.metric("Total People", f"{total:,}", delta=tot_source, delta_color='red')
-
-with col2:
-    st.metric("Males", f"{male:,}", delta=male_source)
-
-with col3:
-    st.metric("Females", f"{female:,}", delta=female_source)
-
-with col4:
-    # Use aggregated totals for the top 5 diagnoses to avoid overlapping bars/text
-    bars = alt.Chart(top_5).mark_bar().encode(
-        x=alt.X('total_cases:Q', title='Total Cases'),
-        y=alt.Y('diagnosis:N', sort='-x', title='Diagnosis'),
-        tooltip=['diagnosis', 'total_cases']
-    )
-
-    text = bars.mark_text(
-        align='left',
-        baseline='middle',        git add .devcontainer/morbidity/streamlit_app.py && git commit -m "Move diagnosis chart labels outside bars" && git push origin main
-        color='white',
-        dx=5
-    ).encode(text=alt.Text('total_cases:Q', format=','))
-
-    chart = (bars + text).properties(title='Top 5 Diagnoses by Volume')
-    st.altair_chart(chart, use_container_width=True)
-
-with st.container():
-    # Create 3 columns for the age groups to sit below col1, col2, col3
-    age_col1, age_col2, age_col3 = st.columns([1, 1, 1])
-    
-    # Distribute top 3 age groups across the 3 columns
-    age_items = list(top_5_age_burden.items())
-
-# BURDENS CARD STYLING
 st.markdown("""
-    <style>
-    .age-card {
-        background: white;
-        border-radius: 12px;
-        padding: 16px;
-        margin: 8px 0;
-        border-left: 4px solid #ddd;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        transition: all 0.3s ease;
-    }
-    
-    .age-card:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        transform: translateY(-2px);
-    }
-    
-    .age-card.peak {
-        border-left: 4px solid #FF4444;
-        background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
-    }
-    
-    .age-card.second {
-        border-left: 4px solid #FF9800;
-        background: linear-gradient(135deg, #fff8f0 0%, #ffffff 100%);
-    }
-    
-    .age-card.third {
-        border-left: 4px solid #4CAF50;
-        background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
-    }
-    
-    .rank-badge {
-        display: inline-block;
-        background: #f0f0f0;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: bold;
-        margin-bottom: 8px;
-    }
-    
-    .rank-badge.peak { background: #FF4444; color: white; }
-    .rank-badge.second { background: #FF9800; color: white; }
-    .rank-badge.third { background: #4CAF50; color: white; }
-    
-    .age-group-name {
-        font-size: 1.1rem;
-        font-weight: bold;
-        color: #2196F3;
-        margin: 4px 0;
-    }
-    
-    .case-count {
-        font-size: 1.3rem;
-        font-weight: bold;
-        color: #2c3e50;
-        margin: 4px 0;
-    }
-    
-    .percentage {
-        color: #7f8c8d;
-        font-size: 0.85rem;
-    }
-    
-    .progress-bar {
-        height: 6px;
-        background: #ecf0f1;
-        border-radius: 3px;
-        margin-top: 8px;
-        overflow: hidden;
-    }
-    
-    .progress-fill {
-        height: 100%;
-        border-radius: 3px;
-        transition: width 0.5s ease;
-    }
-    
-    .progress-fill.peak { background: linear-gradient(90deg, #FF4444, #FF6B6B); }
-    .progress-fill.second { background: linear-gradient(90deg, #FF9800, #FFB74D); }
-    .progress-fill.third { background: linear-gradient(90deg, #4CAF50, #81C784); }
-    </style>
+<style>
+/* ── Container ── */
+.section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    margin: 0 0 10px 0;
+    padding: 0;
+}
+.divider { border-top: 1px solid #e2e8f0; margin: 20px 0; }
+
+/* ── Metric tiles ── */
+.metric-tile {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    border: none;
+    margin-bottom: 10px;
+}
+.metric-label { font-size: 0.78rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.metric-value { font-size: 1.6rem; font-weight: 800; color: #1e293b; margin: 4px 0; }
+.metric-delta { font-size: 0.78rem; color: #94a3b8; }
+
+/* ── Age cards ── */
+.age-card { background: white; border-radius: 12px; padding: 16px; border-left: 4px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
+.age-card.peak   { border-left-color: #FF4444; background: linear-gradient(135deg, #fff5f5, #ffffff); }
+.age-card.second { border-left-color: #FF9800; background: linear-gradient(135deg, #fff8f0, #ffffff); }
+.age-card.third  { border-left-color: #4CAF50; background: linear-gradient(135deg, #f1f8f4, #ffffff); }
+.rank-badge        { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; margin-bottom: 8px; }
+.rank-badge.peak   { background: #FF4444; color: white; }
+.rank-badge.second { background: #FF9800; color: white; }
+.rank-badge.third  { background: #4CAF50; color: white; }
+.age-group-name { font-size: 1rem; font-weight: 700; color: #2196F3; margin: 4px 0; }
+.case-count     { font-size: 1.25rem; font-weight: 800; color: #1e293b; margin: 4px 0; }
+.percentage     { color: #94a3b8; font-size: 0.8rem; }
+.progress-bar   { height: 5px; background: #f1f5f9; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+.progress-fill  { height: 100%; border-radius: 3px; }
+.progress-fill.peak   { background: linear-gradient(90deg, #FF4444, #FF6B6B); }
+.progress-fill.second { background: linear-gradient(90deg, #FF9800, #FFB74D); }
+.progress-fill.third  { background: linear-gradient(90deg, #4CAF50, #81C784); }
+</style>
 """, unsafe_allow_html=True)
 
+#  Open container 
+st.markdown("<div class='dashboard-container'>", unsafe_allow_html=True)
 
-age_col1, age_col2, age_col3 = st.columns(3)
+# ROW 1: Metrics (left) + Bar chart (right) 
+metric_col, chart_col = st.columns([1, 2])
 
-with age_col1:
-    if len(age_items) > 0:
-        percent = (age_items[0][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
+with metric_col:
+    st.markdown("<div class='section-title'>📋 Summary</div>", unsafe_allow_html=True)
+    for label, value, delta in [
+        ("Total People", total,  tot_source),
+        ("Males",        male,   male_source),
+        ("Females",      female, female_source),
+    ]:
+        delta_html = f"<div class='metric-delta'>Δ {delta:+,}</div>" if delta is not None else ""
         st.markdown(f"""
-        <div class='age-card peak'>
-            <div class='rank-badge peak'>🔺 PEAK BURDEN</div>
-            <div class='age-group-name'>📊 {age_items[0][0]} years</div>
-            <div class='case-count'>{age_items[0][1]:,}</div>
-            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
-            <div class='progress-bar'>
-                <div class='progress-fill peak' style='width: {percent}%;'></div>
-            </div>
+        <div class='metric-tile'>
+            <div class='metric-label'>{label}</div>
+            <div class='metric-value'>{value:,}</div>
+            {delta_html}
         </div>
         """, unsafe_allow_html=True)
-    else:
-        st.info("No data available")
 
-with age_col2:
-    if len(age_items) > 1:
-        percent = (age_items[1][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
-        st.markdown(f"""
-        <div class='age-card second'>
-            <div class='rank-badge second'>🥈 SECOND</div>
-            <div class='age-group-name'>📊 {age_items[1][0]} years</div>
-            <div class='case-count'>{age_items[1][1]:,}</div>
-            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
-            <div class='progress-bar'>
-                <div class='progress-fill second' style='width: {percent}%;'></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("No data available")
+with chart_col:
+    st.markdown("<div class='section-title'>🏥 Top 5 Diagnoses by Volume</div>", unsafe_allow_html=True)
+    bars = alt.Chart(top_5).mark_bar(cornerRadiusEnd=4).encode(
+        x=alt.X("total_cases:Q", title="Total Cases", axis=alt.Axis(grid=False)),
+        y=alt.Y("diagnosis:N", sort="-x", title=""),
+        color=alt.value("#2196F3"),
+        tooltip=["diagnosis", "total_cases"],
+    )
+    text = bars.mark_text(align="left", baseline="middle", color="white", dx=5).encode(
+        text=alt.Text("total_cases:Q", format=",")
+    )
+    st.altair_chart(
+        (bars + text)
+            .properties(height=200, padding={"top": 0, "left": 5, "right": 5, "bottom": 5})
+            .configure_view(strokeWidth=0, fill='transparent')
+            .configure_axis(labelFontSize=11),
+        use_container_width=True,
+    )
 
-with age_col3:
-    if len(age_items) > 2:
-        percent = (age_items[2][1] / age_burden[max_burden_age] * 100) if max_burden_age and age_burden[max_burden_age] > 0 else 100
-        st.markdown(f"""
-        <div class='age-card third'>
-            <div class='rank-badge third'>🥉 THIRD</div>
-            <div class='age-group-name'>📊 {age_items[2][0]} years</div>
-            <div class='case-count'>{age_items[2][1]:,}</div>
-            <div class='percentage'>cases ({percent:.1f}% of peak)</div>
-            <div class='progress-bar'>
-                <div class='progress-fill third' style='width: {percent}%;'></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("No data available")
+#  Close container 
+st.markdown("</div>", unsafe_allow_html=True)
 st.divider()
 
 col1, col2 = st.columns([1, 1])
