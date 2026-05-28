@@ -81,7 +81,7 @@ st.markdown("""
 #Logo imports
 
 # Page title
-st.header("📊 Morbidity Dashboard")
+# st.header("📊 Morbidity Dashboard")
 
 data = pd.read_csv('model/extracted_mental_health_data.csv')
 # print("Data", data)
