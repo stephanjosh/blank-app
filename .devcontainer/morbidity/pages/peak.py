@@ -141,3 +141,18 @@ with age_col3:
         st.info("No data available")
 
 st.divider()
+
+# a prevalence plot for the top 5 diagnoses across all age groups
+diagnosis_burden = data.groupby('diagnosis')[age_columns].sum().sum(axis=1).sort_values(ascending=False)
+top_diagnoses = diagnosis_burden.head(5).index.tolist()
+top_diagnosis_data = data[data['diagnosis'].isin(top_diagnoses)].groupby('month')[age_columns].sum().reset_index()
+top_diagnosis_data['total_cases'] = top_diagnosis_data[age_columns].sum(axis=1)
+# the prevalence plot
+fig = go.Figure()
+for diagnosis in top_diagnoses:
+    diagnosis_data = data[data['diagnosis'] == diagnosis].groupby('month')[age_columns].sum().reset_index()
+    diagnosis_data['total_cases'] = diagnosis_data[age_columns].sum(axis=1)
+    fig.add_trace(go.Scatter(x=diagnosis_data['month'], y=diagnosis_data['total_cases'], mode='lines+markers', name=diagnosis))
+fig.update_layout(title='📊 Prevalence of Top 5 Diagnoses Over Time'    , xaxis_title='Month', yaxis_title='Total Cases', template='plotly_white'
+                   )
+st.plotly_chart(fig)
